@@ -14,8 +14,8 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import iterate_in_threadpool
 
 from models.schemas import (
@@ -26,6 +26,7 @@ from models.schemas import (
     RecentServiceEmailRequest,
     RescheduleEmailRequest,
     SchedulingEmailRequest,
+    UrgentCallRequest,
     VendorMessageErrorResponse,
     VendorMessageRequest,
 )
@@ -38,6 +39,12 @@ from services.email_send import (
     handle_recent_service_email,
     handle_reschedule_email,
     handle_scheduling_email,
+)
+from services.twilio_client import generate_urgent_twiml
+from services.urgent_call import (
+    handle_call_status,
+    handle_digit_pressed,
+    handle_urgent_call,
 )
 from services.vendor_message import handle_vendor_message
 
@@ -225,6 +232,59 @@ async def manny_oil_general_inquiries(request: MannyOilGeneralInquiriesRequest):
         logger.exception("manny_oil_general_inquiries handler failed")
         error = VendorMessageErrorResponse(status="error", message=_ERROR_MESSAGE)
         return JSONResponse(status_code=500, content=error.model_dump())
+
+
+@app.post("/urgent_call")
+async def urgent_call(request: UrgentCallRequest):
+    """Kick off the urgent-dispatch flow for AllPoints HVAC.
+
+    Sends the initial urgent email, creates a Supabase
+    urgent_call_attempts row, and spawns the Twilio retry loop as a
+    background asyncio task. Returns immediately with the attempt_id.
+    """
+    _ensure_call_timestamp(request)
+    try:
+        return await handle_urgent_call(request)
+    except Exception:
+        logger.exception("urgent_call handler failed")
+        error = VendorMessageErrorResponse(status="error", message=_ERROR_MESSAGE)
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+
+@app.get("/urgent_call_twiml")
+async def urgent_call_twiml(attempt_id: str = Query(...)):
+    """TwiML Twilio fetches when placing each urgent call.
+
+    `attempt_id` is carried through so the Gather action URL can
+    include it; the TwiML body itself is otherwise static.
+    """
+    twiml = generate_urgent_twiml(attempt_id)
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/urgent_call_pressed")
+async def urgent_call_pressed(
+    request: Request, attempt_id: str = Query(...)
+):
+    """Twilio Gather action — digit pressed or Gather timed out."""
+    form = await request.form()
+    digits = (form.get("Digits") or "").strip() or None
+    call_sid = form.get("CallSid", "")
+    twiml = await handle_digit_pressed(attempt_id, digits, call_sid)
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/urgent_call_status")
+async def urgent_call_status(
+    request: Request, attempt_id: str = Query(...)
+):
+    """Twilio call lifecycle webhook — observability only."""
+    form = await request.form()
+    call_sid = form.get("CallSid", "")
+    call_status = form.get("CallStatus", "")
+    call_duration = form.get("CallDuration", None)
+    await handle_call_status(attempt_id, call_sid, call_status, call_duration)
+    return Response(status_code=204)
 
 
 @app.post("/elevenlabs_post_call")

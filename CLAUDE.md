@@ -151,15 +151,78 @@ inbox previews line up visually.
   organization row must exist in Supabase before forwarding is
   enabled on PROD.
 
+### Urgent call orchestration
+
+Four routes power the urgent-dispatch flow. The agent hits
+`/urgent_call`; the other three are Twilio webhook callbacks.
+
+- `POST /urgent_call`
+  Called by the agent's Urgent dispatch node. Required:
+  customerName, phone, address, serviceIssue. Optional: email,
+  callTimestamp. Sends the initial urgent email, creates an
+  `urgent_call_attempts` row in Supabase (status="pending"),
+  spawns the Twilio retry loop as a background asyncio task, and
+  returns 200 immediately. Response:
+  `{"status":"ok","message":"Urgent dispatch initiated. The owner
+  will be contacted immediately.","attempt_id":"<uuid>"}`.
+
+- `GET /urgent_call_twiml?attempt_id=...`
+  Twilio fetches this URL when placing each call. Returns TwiML
+  XML that plays the urgent message (Polly.Joanna-Neural) and
+  Gathers one DTMF digit (timeout=15s). The Gather action URL
+  carries `attempt_id` through as a query param.
+
+- `POST /urgent_call_pressed?attempt_id=...`
+  Twilio Gather action URL. Twilio POSTs form-encoded data with
+  `Digits` and `CallSid` fields. If `Digits` is non-empty, the
+  attempt row flips to status="confirmed", a confirmation email
+  fires, and TwiML thanks the recipient. If empty (Gather
+  timeout), no status change — the orchestration loop owns the
+  retry decision.
+
+- `POST /urgent_call_status?attempt_id=...`
+  Twilio call-lifecycle callback (initiated/ringing/answered/
+  completed). Appends a JSONB entry to `call_attempts` for
+  observability. Returns 204. Does NOT drive control flow.
+
+#### Retry loop
+
+`services/urgent_call.orchestrate_urgent_call(attempt_id)` runs
+detached on the event loop via `asyncio.create_task`. Per attempt
+(up to 3):
+
+1. Update row status="calling", attempt_num=N.
+2. Place the Twilio call via `services/twilio_client`.
+3. Append a "placed" log entry to `call_attempts`.
+4. Sleep `ATTEMPT_TIMEOUT_SECONDS` (90s PROD, 10s with FAST_MODE).
+5. Race-grace poll: 3× at 1s intervals, look for status=
+   "confirmed" arriving just after sleep.
+6. If confirmed → return. If not and attempts remain → sleep
+   `BETWEEN_ATTEMPTS_SECONDS` (30s PROD, 3s with FAST_MODE) and
+   loop.
+
+After 3 failed attempts: row flips to status="never_confirmed"
+and the failure email fires.
+
+Twilio SDK failures during call placement are logged with a
+`twilio_error` entry in `call_attempts` and the loop retries on
+the next iteration rather than crashing the task.
+
+Background-task safety: `orchestrate_urgent_call` wraps its body
+in try/except so uncaught exceptions show up in logs instead of
+disappearing into the event loop.
+
+#### FAST_MODE
+
+`URGENT_CALL_FAST_MODE=true` (TEST-only) compresses the timings
+to 10s/3s so a full 3-attempt timeout flow finishes in ~30s
+instead of 5.5 minutes. PROD leaves the var unset
+(defaults to false).
+
 ### Health
 
 - `GET /health` → `{"status": "ok"}` (200). Used by Railway's
   health check and for manual deploy verification.
-
-## Endpoints (future)
-
-- `POST /urgent_call` — Twilio + Supabase + asyncio orchestration.
-  Comes in the next build session. Do NOT stub it ahead of time.
 
 ## Active integrations
 
@@ -167,10 +230,20 @@ inbox previews line up visually.
   email endpoints plus `/vendor_message` send via Resend to
   `OFFICE_EMAIL_RECIPIENTS`. Sender: `Booker AI
   <austin@getbookerai.com>` (verified domain getbookerai.com).
+  The three urgent_call emails (initial, confirmation, never-
+  confirmed) also send via Resend to the same recipient list.
 - Booker dashboard webhook (`BOOKER_WEBHOOK_URL`,
   `BOOKER_WEBHOOK_SECRET`) — `/elevenlabs_post_call` forwards
   post-call events to the Lovable edge function that ingests them
   into the Booker dashboard.
+- Twilio (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+  `TWILIO_FROM_NUMBER`) — places the urgent retry calls.
+  `URGENT_CALL_RECIPIENT_PHONE` is the number that rings (PROD:
+  Manny's cell, TEST: Austin's cell). Twilio reaches the backend
+  via the public custom domain configured in `PUBLIC_BASE_URL`.
+- Supabase (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) —
+  `urgent_call_attempts` table tracks each dispatch through its
+  retry-loop lifecycle. Service-role key bypasses RLS.
 
 Credentials live in the Railway dashboard, not the repo. `.env`
 is gitignored.
@@ -192,6 +265,14 @@ service:
 | `POST_CALL_WEBHOOK_FORWARDING_ENABLED` | `true` | `false` |
 | `NIXPACKS_UV_VERSION` | `0.4.30` | `0.4.30` |
 | `USE_STUB_VENDOR_MESSAGE` | unset (defaults `false`) | unset |
+| `TWILIO_ACCOUNT_SID` | shared Twilio account SID | same |
+| `TWILIO_AUTH_TOKEN` | shared Twilio auth token | same |
+| `TWILIO_FROM_NUMBER` | `+15084655351` | same |
+| `SUPABASE_URL` | `https://snmzbjmddgukamuknbxr.supabase.co` | same |
+| `SUPABASE_SERVICE_ROLE_KEY` | service-role key | same |
+| `URGENT_CALL_RECIPIENT_PHONE` | `+15087699785` (Manny) | `+12065364398` (Austin) |
+| `URGENT_CALL_FAST_MODE` | unset / `false` | `true` (optional, for fast integration tests) |
+| `PUBLIC_BASE_URL` | `https://allpoints-api.getbookerai.com` | `https://allpoints-api-test.getbookerai.com` |
 
 TEST recipient isolation: `OFFICE_EMAIL_RECIPIENTS` on TEST is
 `austin@getbookerai.com` only — test calls never land in
@@ -205,16 +286,20 @@ allpoints-hvac-backend/
 ├── api/
 │   └── main.py            # FastAPI app, route definitions, request logging
 ├── services/
-│   ├── email_send.py      # 7 branded-email handlers (AllPoints + Manny's)
+│   ├── email_send.py      # branded-email handlers (AllPoints + Manny's + 3 urgent)
 │   ├── email_templates.py # HTML + plain-text builders, Booker brand spec
 │   ├── elevenlabs_webhook.py  # post-call forwarder with kill switch
+│   ├── supabase_client.py # urgent_call_attempts CRUD
+│   ├── twilio_client.py   # urgent-call placement + TwiML generation
+│   ├── urgent_call.py     # 3-attempt retry orchestration
 │   ├── utils.py           # normalize_phone
 │   └── vendor_message.py  # vendor message (Resend + stub mode)
 ├── models/
 │   └── schemas.py         # Pydantic request/response models
 ├── data/                  # stub storage (gitignored)
 ├── tests/
-│   └── test_endpoints.py
+│   ├── test_endpoints.py
+│   └── test_urgent_call.py
 ├── config.py              # env loading
 ├── .env.example
 ├── .gitignore
@@ -318,10 +403,11 @@ recording is multiple MB — only its length is logged).
 
 ## Forward references
 
-- `POST /urgent_call` — Twilio + Supabase + asyncio orchestration.
-  Built in a follow-on session. Env vars `TWILIO_*`,
-  `URGENT_CALL_*`, `SUPABASE_*` are not set on Railway today and
-  must not be added until that session.
+- End-to-end manual integration testing for `/urgent_call`
+  happens in the next session, after Twilio/Supabase env vars are
+  configured on Railway. The next session uses TEST with FAST_MODE
+  on, rings Austin's cell, walks through happy path + never-
+  confirmed paths, then verifies the Supabase rows.
 - Phase 10 migration of the ElevenLabs agent tool URLs from
   Make.com to this backend is a separate branch-based change.
-  This session does not touch the agent at all.
+  This session does not touch the agent.

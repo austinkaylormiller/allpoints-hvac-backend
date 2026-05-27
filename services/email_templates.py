@@ -712,3 +712,192 @@ def manny_oil_general_inquiries_text(
         client_business_name=client_business_name,
         call_timestamp=call_timestamp,
     )
+
+
+# Urgent dispatch — initial, confirmed, never-confirmed. All three
+# share the earthy-red accent (stop/alert in the warm family); the
+# subject and tagline carry the variant.
+
+def _urgent_sections(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    email: Optional[str] = None,
+    extra_highlight: Optional[tuple[str, str]] = None,
+) -> list[dict]:
+    sections: list[dict] = [
+        {
+            "type": "rows",
+            "heading": "Customer Information",
+            "rows": _customer_rows(customer_name, phone, email=email, address=address),
+        },
+        {"type": "paragraph", "heading": "Urgent Service Request", "text": service_issue},
+    ]
+    if extra_highlight is not None:
+        heading, text = extra_highlight
+        sections.append({"type": "highlight", "heading": heading, "text": text})
+    return sections
+
+
+def urgent_initial_email_html(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    client_business_name: str,
+    email: Optional[str] = None,
+    call_timestamp: Optional[str] = None,
+) -> str:
+    return render_email_html(
+        header="URGENT — Service Request",
+        tagline=(
+            "An urgent service request has been received and requires "
+            "immediate attention. The owner is being contacted by phone now."
+        ),
+        accent_hex=ACCENT_EARTHY_RED,
+        sections=_urgent_sections(customer_name, phone, address, service_issue, email=email),
+        client_business_name=client_business_name,
+        call_timestamp=call_timestamp,
+    )
+
+
+def urgent_initial_email_text(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    client_business_name: str,
+    email: Optional[str] = None,
+    call_timestamp: Optional[str] = None,
+) -> str:
+    return render_email_text(
+        header="URGENT — Service Request",
+        tagline=(
+            "An urgent service request has been received and requires "
+            "immediate attention. The owner is being contacted by phone now."
+        ),
+        sections=_urgent_sections(customer_name, phone, address, service_issue, email=email),
+        client_business_name=client_business_name,
+        call_timestamp=call_timestamp,
+    )
+
+
+def urgent_confirmation_email_html(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    confirmed_at: str,
+    client_business_name: str,
+    email: Optional[str] = None,
+    call_timestamp: Optional[str] = None,
+) -> str:
+    return render_email_html(
+        header="Urgent Call Confirmed",
+        tagline="The owner has confirmed receipt of the urgent dispatch.",
+        accent_hex=ACCENT_EARTHY_RED,
+        sections=_urgent_sections(
+            customer_name,
+            phone,
+            address,
+            service_issue,
+            email=email,
+            extra_highlight=("Confirmed At", confirmed_at),
+        ),
+        client_business_name=client_business_name,
+        call_timestamp=call_timestamp,
+    )
+
+
+def urgent_confirmation_email_text(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    confirmed_at: str,
+    client_business_name: str,
+    email: Optional[str] = None,
+    call_timestamp: Optional[str] = None,
+) -> str:
+    return render_email_text(
+        header="Urgent Call Confirmed",
+        tagline="The owner has confirmed receipt of the urgent dispatch.",
+        sections=_urgent_sections(
+            customer_name,
+            phone,
+            address,
+            service_issue,
+            email=email,
+            extra_highlight=("Confirmed At", confirmed_at),
+        ),
+        client_business_name=client_business_name,
+        call_timestamp=call_timestamp,
+    )
+
+
+def urgent_never_confirmed_email_html(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    attempts_made: int,
+    client_business_name: str,
+    email: Optional[str] = None,
+    call_timestamp: Optional[str] = None,
+) -> str:
+    return render_email_html(
+        header="URGENT — All Phone Attempts Failed",
+        tagline=(
+            f"Unable to reach the owner by phone after {attempts_made} attempts. "
+            "Manual follow-up required immediately."
+        ),
+        accent_hex=ACCENT_EARTHY_RED,
+        sections=_urgent_sections(
+            customer_name,
+            phone,
+            address,
+            service_issue,
+            email=email,
+            extra_highlight=(
+                "Action Required",
+                "Phone outreach to the owner has not succeeded. "
+                "Reach the customer directly using the contact details above.",
+            ),
+        ),
+        client_business_name=client_business_name,
+        call_timestamp=call_timestamp,
+    )
+
+
+def urgent_never_confirmed_email_text(
+    customer_name: str,
+    phone: str,
+    address: str,
+    service_issue: str,
+    attempts_made: int,
+    client_business_name: str,
+    email: Optional[str] = None,
+    call_timestamp: Optional[str] = None,
+) -> str:
+    return render_email_text(
+        header="URGENT — All Phone Attempts Failed",
+        tagline=(
+            f"Unable to reach the owner by phone after {attempts_made} attempts. "
+            "Manual follow-up required immediately."
+        ),
+        sections=_urgent_sections(
+            customer_name,
+            phone,
+            address,
+            service_issue,
+            email=email,
+            extra_highlight=(
+                "Action Required",
+                "Phone outreach to the owner has not succeeded. "
+                "Reach the customer directly using the contact details above.",
+            ),
+        ),
+        client_business_name=client_business_name,
+        call_timestamp=call_timestamp,
+    )

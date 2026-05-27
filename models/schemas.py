@@ -121,6 +121,23 @@ class VendorMessageRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
+# --- Urgent call (Twilio + Supabase + asyncio retry loop) ---
+
+
+class UrgentCallRequest(_OptionalEmailMixin):
+    """Request body for POST /urgent_call.
+
+    Required fields mirror the existing AllPoints_urgent_call
+    Make.com tool schema. Optional fields (email, callTimestamp)
+    follow the convention of the other AllPoints email endpoints.
+    """
+
+    customerName: str = Field(min_length=1)
+    phone: PhoneField
+    address: str = Field(min_length=1)
+    serviceIssue: str = Field(min_length=1)
+
+
 # --- Response models ---
 
 
@@ -147,3 +164,16 @@ class EmailResponse(BaseModel):
 
     status: Literal["ok"]
     message: str
+
+
+class UrgentCallResponse(BaseModel):
+    """Success response for POST /urgent_call.
+
+    `attempt_id` is the UUID of the row created in
+    Supabase.urgent_call_attempts — useful for tracing logs and for
+    the agent to acknowledge in its spoken response.
+    """
+
+    status: Literal["ok"]
+    message: str
+    attempt_id: str

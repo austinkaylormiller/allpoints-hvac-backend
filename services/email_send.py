@@ -24,6 +24,7 @@ from models.schemas import (
     RecentServiceEmailRequest,
     RescheduleEmailRequest,
     SchedulingEmailRequest,
+    UrgentCallRequest,
 )
 from services import email_templates
 
@@ -289,3 +290,95 @@ def handle_manny_oil_general_inquiries(request: MannyOilGeneralInquiriesRequest)
         "status": "ok",
         "message": "Callback request received. The office will follow up.",
     }
+
+
+# --- Urgent call: 3 phases of email ---
+
+
+def handle_urgent_initial_email(request: UrgentCallRequest) -> None:
+    """Fires from /urgent_call entry before the Twilio retry loop starts."""
+    subject = f"URGENT - {request.customerName}"
+    html_body = email_templates.urgent_initial_email_html(
+        customer_name=request.customerName,
+        phone=request.phone,
+        address=request.address,
+        service_issue=request.serviceIssue,
+        client_business_name=config.CLIENT_BUSINESS_NAME,
+        email=request.email,
+        call_timestamp=request.callTimestamp,
+    )
+    text_body = email_templates.urgent_initial_email_text(
+        customer_name=request.customerName,
+        phone=request.phone,
+        address=request.address,
+        service_issue=request.serviceIssue,
+        client_business_name=config.CLIENT_BUSINESS_NAME,
+        email=request.email,
+        call_timestamp=request.callTimestamp,
+    )
+    _send_branded_email(
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        log_label="urgent_initial_email",
+    )
+
+
+def handle_urgent_confirmation_email(row: dict, confirmed_at: str) -> None:
+    """Fires when the recipient pressed a digit on the Twilio call.
+
+    `row` is the Supabase urgent_call_attempts row (snake_case
+    column names).
+    """
+    customer_name = row["customer_name"]
+    subject = f"Urgent Confirmed - {customer_name}"
+    html_body = email_templates.urgent_confirmation_email_html(
+        customer_name=customer_name,
+        phone=row["customer_phone"],
+        address=row["customer_address"],
+        service_issue=row["service_issue"],
+        confirmed_at=confirmed_at,
+        client_business_name=config.CLIENT_BUSINESS_NAME,
+    )
+    text_body = email_templates.urgent_confirmation_email_text(
+        customer_name=customer_name,
+        phone=row["customer_phone"],
+        address=row["customer_address"],
+        service_issue=row["service_issue"],
+        confirmed_at=confirmed_at,
+        client_business_name=config.CLIENT_BUSINESS_NAME,
+    )
+    _send_branded_email(
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        log_label="urgent_confirmation_email",
+    )
+
+
+def handle_urgent_never_confirmed_email(row: dict, attempts_made: int) -> None:
+    """Fires when all 3 phone attempts failed without a digit press."""
+    customer_name = row["customer_name"]
+    subject = f"URGENT - All Phone Attempts Failed - {customer_name}"
+    html_body = email_templates.urgent_never_confirmed_email_html(
+        customer_name=customer_name,
+        phone=row["customer_phone"],
+        address=row["customer_address"],
+        service_issue=row["service_issue"],
+        attempts_made=attempts_made,
+        client_business_name=config.CLIENT_BUSINESS_NAME,
+    )
+    text_body = email_templates.urgent_never_confirmed_email_text(
+        customer_name=customer_name,
+        phone=row["customer_phone"],
+        address=row["customer_address"],
+        service_issue=row["service_issue"],
+        attempts_made=attempts_made,
+        client_business_name=config.CLIENT_BUSINESS_NAME,
+    )
+    _send_branded_email(
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        log_label="urgent_never_confirmed_email",
+    )
