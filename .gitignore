@@ -13,6 +13,10 @@ venv/
 .env
 .env.local
 
+# Offline-reference env templates Austin may fill in locally — the
+# canonical values live in the Railway dashboard, not here.
+docs/.env.*.template
+
 # uv
 .uv/
 
