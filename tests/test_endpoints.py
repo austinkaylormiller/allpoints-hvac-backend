@@ -269,7 +269,7 @@ EMAIL_ENDPOINT_CASES = [
             "address": "45 Oak Ave, Worcester, MA",
             "preferredTimes": "Anytime this week",
         },
-        "expected_subject": "Manny's Oil - Delivery Request - Maria Santos",
+        "expected_subject": "Delivery Request, Manny's Oil - Maria Santos",
         "expected_header": "Oil Delivery Request",
         "expected_business": "Manny's Oil Company",
         "expected_body_contains": [
@@ -386,7 +386,13 @@ def test_branded_email_optional_email_absent_does_not_render_label(real_client, 
 
 
 @pytest.mark.parametrize("case", EMAIL_ENDPOINT_CASES, ids=lambda c: c["path"])
-def test_branded_email_uses_provided_call_timestamp(real_client, case):
+def test_branded_email_does_not_render_call_timestamp(real_client, case):
+    """callTimestamp is accepted at the API boundary but not rendered.
+
+    Both the provided-by-agent case and the server-filled-fallback
+    case must produce a body with no "Call received:" line and no
+    raw timestamp.
+    """
     provided_ts = "2026-05-27T14:23:00+00:00"
     payload = dict(case["payload"])
     payload["callTimestamp"] = provided_ts
@@ -396,22 +402,21 @@ def test_branded_email_uses_provided_call_timestamp(real_client, case):
 
     assert resp.status_code == 200, resp.text
     sent = mock_send.call_args.args[0]
-    assert provided_ts in sent["html"]
-    assert provided_ts in sent["text"]
+    assert "Call received:" not in sent["html"]
+    assert "Call received:" not in sent["text"]
+    assert provided_ts not in sent["html"]
+    assert provided_ts not in sent["text"]
 
-
-@pytest.mark.parametrize("case", EMAIL_ENDPOINT_CASES, ids=lambda c: c["path"])
-def test_branded_email_fills_call_timestamp_when_omitted(real_client, case):
+    # Omitting the field still works — the API fills a default but
+    # the template still doesn't render it.
     with patch("services.email_send.resend.Emails.send") as mock_send:
         mock_send.return_value = {"id": "test_message_id"}
         resp = real_client.post(case["path"], json=case["payload"])
 
     assert resp.status_code == 200, resp.text
     sent = mock_send.call_args.args[0]
-    # Server-filled fallback is a UTC ISO 8601 timestamp; check the
-    # label is present in both renderings.
-    assert "Call received:" in sent["text"]
-    assert "Call received:" in sent["html"]
+    assert "Call received:" not in sent["html"]
+    assert "Call received:" not in sent["text"]
 
 
 def test_general_inquiries_email_requires_lowercase_inquiry(real_client):

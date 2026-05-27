@@ -228,7 +228,7 @@ def handle_recent_service_email(request: RecentServiceEmailRequest) -> dict:
 
 
 def handle_manny_oil_delivery_request(request: MannyOilDeliveryRequestRequest) -> dict:
-    subject = f"Manny's Oil - Delivery Request - {request.customerName}"
+    subject = f"Delivery Request, Manny's Oil - {request.customerName}"
     html_body = email_templates.manny_oil_delivery_request_html(
         customer_name=request.customerName,
         phone=request.phone,

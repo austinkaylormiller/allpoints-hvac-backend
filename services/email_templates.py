@@ -112,19 +112,17 @@ def render_email_html(
     client_business_name: str,
     call_timestamp: Optional[str] = None,
 ) -> str:
-    """Render the full HTML body for a notification email."""
+    """Render the full HTML body for a notification email.
+
+    `call_timestamp` is accepted to keep the parameter contract
+    stable for callers, but is intentionally not rendered — the
+    received-at line clutters the footer and the agent/log
+    already records the time.
+    """
     e_header = html.escape(header)
     e_tagline = html.escape(tagline)
     e_client = html.escape(client_business_name)
     sections_html = "".join(_section_html(s) for s in sections)
-
-    ts_line = ""
-    if call_timestamp:
-        ts_line = (
-            f'<div style="font-family:{_FONT}; font-weight:400; font-size:13px; '
-            f'line-height:1.5; color:#6c6b67;">Call received: '
-            f"{html.escape(call_timestamp)}</div>"
-        )
 
     return f"""\
 <!DOCTYPE html>
@@ -156,7 +154,6 @@ def render_email_html(
 <div style="margin-top:40px; padding-top:20px; border-top:1px solid #e5e5e5;">
 <div style="font-family:{_FONT}; font-weight:400; font-size:13px; line-height:1.5; color:#6c6b67;">Booker AI · <a href="https://getbookerai.com" style="color: #6c6b67; text-decoration: underline;">getbookerai.com</a></div>
 <div style="font-family:{_FONT}; font-weight:400; font-size:13px; line-height:1.5; color:#6c6b67;">You're receiving this because Booker answered a call for {e_client}.</div>
-{ts_line}
 </div>
 
 </td>
@@ -190,9 +187,12 @@ def render_email_text(
     client_business_name: str,
     call_timestamp: Optional[str] = None,
 ) -> str:
-    """Render the plain-text fallback body for a notification email."""
+    """Render the plain-text fallback body for a notification email.
+
+    `call_timestamp` is accepted to keep the parameter contract
+    stable for callers, but is intentionally not rendered.
+    """
     sections_text = "\n\n".join(_section_text(s) for s in sections)
-    ts_line = f"Call received: {call_timestamp}\n" if call_timestamp else ""
     return (
         f"{header}\n"
         f"\n"
@@ -202,7 +202,6 @@ def render_email_text(
         f"\n"
         f"Booker AI · getbookerai.com\n"
         f"You're receiving this because Booker answered a call for {client_business_name}.\n"
-        f"{ts_line}"
     )
 
 
@@ -621,7 +620,7 @@ def manny_oil_delivery_request_html(
     return render_email_html(
         header="Oil Delivery Request",
         tagline=f"A customer has requested an oil delivery from {client_business_name}.",
-        accent_hex=ACCENT_AMBER_GOLD,
+        accent_hex=ACCENT_ORANGE_CLAY,
         sections=_manny_oil_delivery_sections(
             customer_name, phone, address, preferred_times, email=email
         ),

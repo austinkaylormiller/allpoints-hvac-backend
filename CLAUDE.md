@@ -63,8 +63,13 @@ All POST endpoints return:
 Optional fields on every email endpoint:
 - `email` — caller email; renders in the template only when present.
 - `callTimestamp` — ISO 8601 string from ElevenLabs's
-  `{{system__time_utc}}`; if absent the api/ layer fills in
-  `datetime.utcnow()` before the handler runs.
+  `{{system__time_utc}}`. Accepted and validated at the API
+  boundary; the api/ layer fills in `datetime.utcnow()` when the
+  agent omits it. **Not rendered in the email body** — the
+  template intentionally drops the received-at line. The field is
+  retained on the schema so the agent tool config can keep sending
+  it without a breaking change if we ever want to start displaying
+  it again.
 
 All `phone` fields go through `services.utils.normalize_phone()` at
 the request boundary — spoken-word digits, hyphens, parens, and
@@ -93,16 +98,18 @@ guard at the Pydantic layer.
 
 - `POST /manny_oil_delivery_request`
   Required: customerName, phone, address, preferredTimes.
-  Subject: "Manny's Oil - Delivery Request - {customerName}".
+  Subject: "Delivery Request, Manny's Oil - {customerName}".
 - `POST /manny_oil_general_inquiries`
   Required: customerName, phone, inquiry (lowercase), preferredTimes.
   Subject: "Callback Request, Manny's Oil - {customerName}".
 
 The Manny's Oil emails use the same Booker brand template but pass
-`Manny's Oil Company` as `client_business_name` — the tagline,
-footer, and "Call received for {business}" line all read
+`Manny's Oil Company` as `client_business_name` — the tagline and
+footer ("Booker answered a call for Manny's Oil Company") read
 `Manny's Oil Company` rather than `AllPoints HVAC`. The office can
-tell at a glance which business a callback is for.
+tell at a glance which business a callback is for. Both Manny's
+subjects follow the `[Action], Manny's Oil - [Name]` pattern so
+inbox previews line up visually.
 
 ### Vendor message
 
@@ -233,7 +240,7 @@ left border so the office can scan inbox previews at a glance:
 | `/cancel_email` | earthy red | `#9c4a3f` |
 | `/general_inquiries_email` | blue-gray | `#5a7f8b` |
 | `/recent_service_email` | blue-gray | `#5a7f8b` |
-| `/manny_oil_delivery_request` | amber gold | `#b8842a` |
+| `/manny_oil_delivery_request` | orange clay | `#c66140` |
 | `/manny_oil_general_inquiries` | blue-gray | `#5a7f8b` |
 | `/vendor_message` | orange clay | `#c66140` |
 
