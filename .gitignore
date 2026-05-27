@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Env files
+.env
+.env.local
+
+# uv
+.uv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Stub data (real runtime data, not committed)
+data/messages.jsonl
+data/*.jsonl
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
