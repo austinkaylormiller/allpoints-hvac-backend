@@ -48,13 +48,19 @@ RACE_POLL_INTERVAL_SECONDS = 1
 
 
 def _attempt_timeout_seconds() -> int:
-    """Per-attempt sleep before the orchestration treats it as failed."""
-    return 10 if config.URGENT_CALL_FAST_MODE else 90
+    """Per-attempt sleep before the orchestration treats it as failed.
+
+    Matches the Make.com 90s grace window: long enough for a Twilio
+    call to ring out, go to voicemail, and resolve. No FAST_MODE
+    override — integration tests must run against the real timing
+    so the recipient experience is validated end-to-end.
+    """
+    return 90
 
 
 def _between_attempts_seconds() -> int:
-    """Sleep between attempt N and attempt N+1."""
-    return 3 if config.URGENT_CALL_FAST_MODE else 30
+    """Sleep between attempt N and attempt N+1 (Make.com convention)."""
+    return 30
 
 
 def _utcnow_iso() -> str:

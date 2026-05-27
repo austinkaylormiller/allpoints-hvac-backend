@@ -43,7 +43,6 @@ def patched_env(monkeypatch):
     monkeypatch.setattr(config, "CLIENT_BUSINESS_NAME", "AllPoints HVAC")
     monkeypatch.setattr(config, "MANNY_BUSINESS_NAME", "Manny's Oil Company")
     monkeypatch.setattr(config, "URGENT_CALL_RECIPIENT_PHONE", "+12065364398")
-    monkeypatch.setattr(config, "URGENT_CALL_FAST_MODE", True)
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://example.test")
     monkeypatch.setattr(config, "TWILIO_ACCOUNT_SID", "AC_fake")
     monkeypatch.setattr(config, "TWILIO_AUTH_TOKEN", "fake_token")

@@ -194,12 +194,11 @@ detached on the event loop via `asyncio.create_task`. Per attempt
 1. Update row status="calling", attempt_num=N.
 2. Place the Twilio call via `services/twilio_client`.
 3. Append a "placed" log entry to `call_attempts`.
-4. Sleep `ATTEMPT_TIMEOUT_SECONDS` (90s PROD, 10s with FAST_MODE).
+4. Sleep `_attempt_timeout_seconds()` (90s).
 5. Race-grace poll: 3× at 1s intervals, look for status=
    "confirmed" arriving just after sleep.
 6. If confirmed → return. If not and attempts remain → sleep
-   `BETWEEN_ATTEMPTS_SECONDS` (30s PROD, 3s with FAST_MODE) and
-   loop.
+   `_between_attempts_seconds()` (30s) and loop.
 
 After 3 failed attempts: row flips to status="never_confirmed"
 and the failure email fires.
@@ -212,12 +211,14 @@ Background-task safety: `orchestrate_urgent_call` wraps its body
 in try/except so uncaught exceptions show up in logs instead of
 disappearing into the event loop.
 
-#### FAST_MODE
+#### Timing
 
-`URGENT_CALL_FAST_MODE=true` (TEST-only) compresses the timings
-to 10s/3s so a full 3-attempt timeout flow finishes in ~30s
-instead of 5.5 minutes. PROD leaves the var unset
-(defaults to false).
+Constants live in `services/urgent_call.py`:
+`_attempt_timeout_seconds()` returns 90s, `_between_attempts_seconds()`
+returns 30s. A full 3-attempt timeout flow runs up to 5.5 minutes
+(matches the Make.com behavior). There is **no FAST_MODE override**
+— integration tests run against the real timing so the recipient
+experience is validated end-to-end.
 
 ### Health
 
@@ -271,7 +272,6 @@ service:
 | `SUPABASE_URL` | `https://snmzbjmddgukamuknbxr.supabase.co` | same |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key | same |
 | `URGENT_CALL_RECIPIENT_PHONE` | `+15087699785` (Manny) | `+12065364398` (Austin) |
-| `URGENT_CALL_FAST_MODE` | unset / `false` | `true` (optional, for fast integration tests) |
 | `PUBLIC_BASE_URL` | `https://allpoints-api.getbookerai.com` | `https://allpoints-api-test.getbookerai.com` |
 
 TEST recipient isolation: `OFFICE_EMAIL_RECIPIENTS` on TEST is
@@ -405,9 +405,10 @@ recording is multiple MB — only its length is logged).
 
 - End-to-end manual integration testing for `/urgent_call`
   happens in the next session, after Twilio/Supabase env vars are
-  configured on Railway. The next session uses TEST with FAST_MODE
-  on, rings Austin's cell, walks through happy path + never-
-  confirmed paths, then verifies the Supabase rows.
+  configured on Railway. The next session runs the 3-scenario
+  curl sequence in `docs/railway-env-vars.md` against TEST at the
+  real 90s/30s timings, rings Austin's cell, and verifies the
+  Supabase rows for confirmed and never-confirmed paths.
 - Phase 10 migration of the ElevenLabs agent tool URLs from
   Make.com to this backend is a separate branch-based change.
   This session does not touch the agent.

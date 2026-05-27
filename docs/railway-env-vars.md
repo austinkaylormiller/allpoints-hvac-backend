@@ -36,7 +36,6 @@ defaults). This doc is the deployment checklist.
 | **NEW** `SUPABASE_URL` | shared | static | `https://snmzbjmddgukamuknbxr.supabase.co` — the Booker dashboard's shared Supabase project |
 | **NEW** `SUPABASE_SERVICE_ROLE_KEY` | shared | Supabase dashboard → Project Settings → API → `service_role` secret | bypasses RLS; never expose this client-side |
 | **NEW** `URGENT_CALL_RECIPIENT_PHONE` | **differs — CRITICAL** | static | **PROD: `+15087699785` (Manny's cell). TEST: `+12065364398` (Austin's cell).** A swap here means TEST rings Manny in the middle of integration testing — double-check before saving. |
-| **NEW** `URGENT_CALL_FAST_MODE` | TEST only | static | TEST: `true` (10s/3s timings, full flow ~30s). **PROD: do not set** (defaults to `false`, gives the production 90s/30s timings, full flow ~5.5 min). |
 | **NEW** `PUBLIC_BASE_URL` | **differs — CRITICAL** | static | PROD: `https://allpoints-api.getbookerai.com`. TEST: `https://allpoints-api-test.getbookerai.com`. **Must match the service's own custom domain** — Twilio fetches TwiML and posts Gather/status callbacks against this URL. If TEST is set to PROD's domain, Twilio calls PROD back with an `attempt_id` PROD never created, and the orchestration breaks silently. |
 
 ### Why TEST recipients differ
@@ -63,13 +62,13 @@ TEST to Manny's number, every integration test ringing through the
 3-attempt loop wakes Manny up. Eyeball this twice before saving
 the TEST block.
 
-### `URGENT_CALL_FAST_MODE=true` on TEST only
+### Timing is the same on PROD and TEST (90s + 30s)
 
-TEST compresses the 90s/30s production timings to 10s/3s so a full
-3-attempt flow finishes in ~30s instead of 5.5 min. PROD must
-default to `false` (= unset) so Manny gets the real 90s grace
-window per call. **Do not set this var on PROD.** If you ever see
-`URGENT_CALL_FAST_MODE` listed on the PROD service, yank it.
+There is no `URGENT_CALL_FAST_MODE` override. Both services run
+the production 90s-per-attempt + 30s-between-attempts timings so
+TEST integration runs validate the actual recipient experience.
+A full 3-attempt failure path takes ~5.5 minutes — that is the
+test bar.
 
 ### `PUBLIC_BASE_URL` must match the service's own custom domain
 
@@ -97,16 +96,12 @@ URGENT_CALL_RECIPIENT_PHONE=+15087699785
 PUBLIC_BASE_URL=https://allpoints-api.getbookerai.com
 ```
 
-`URGENT_CALL_FAST_MODE` is intentionally absent — PROD runs on the
-default 90s/30s timings.
-
 ## TEST service: `allpoints-hvac-backend-test` — new vars to add
 
 Paste this block into Railway → `allpoints-hvac-backend-test` →
-Variables → Raw Editor. **Adds 8 new vars** on top of the existing
-9. Three of the values differ from PROD on this block:
-`URGENT_CALL_RECIPIENT_PHONE`, `URGENT_CALL_FAST_MODE`,
-`PUBLIC_BASE_URL`.
+Variables → Raw Editor. **Adds 7 new vars** on top of the existing
+9. Two of the values differ from PROD on this block:
+`URGENT_CALL_RECIPIENT_PHONE` and `PUBLIC_BASE_URL`.
 
 ```
 TWILIO_ACCOUNT_SID=<paste-twilio-account-sid>
@@ -115,9 +110,13 @@ TWILIO_FROM_NUMBER=+15084655351
 SUPABASE_URL=https://snmzbjmddgukamuknbxr.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<paste-supabase-service-role-key>
 URGENT_CALL_RECIPIENT_PHONE=+12065364398
-URGENT_CALL_FAST_MODE=true
 PUBLIC_BASE_URL=https://allpoints-api-test.getbookerai.com
 ```
+
+> **Removing the earlier `URGENT_CALL_FAST_MODE=true`:** if the TEST
+> service has this var from the prior deploy attempt, delete it in
+> the Railway dashboard before re-running the integration tests.
+> The codebase no longer reads it.
 
 ## Verification after setting vars
 
@@ -154,10 +153,12 @@ Do these for each service (PROD and TEST) independently.
 ## Integration test sequence (urgent_call)
 
 After env vars are set on TEST and the TEST service is redeployed,
-run these 3 scenarios against the TEST custom domain. With
-`URGENT_CALL_FAST_MODE=true` each scenario takes ~10–90 seconds
-end-to-end. **Austin's cell (`+12065364398`) is the one that
-rings — keep it nearby.**
+run these 3 scenarios against the TEST custom domain. Timings
+match production — Scenario A takes ~90 seconds, Scenario B takes
+~3 minutes, Scenario C takes ~5.5 minutes (real 3-attempt fail
+flow). Slow on purpose: TEST validates the actual recipient
+experience. **Austin's cell (`+12065364398`) is the one that
+rings — keep it nearby and budget the time.**
 
 Common setup:
 
@@ -182,13 +183,18 @@ Expect:
 - 200 immediately with `attempt_id` in the response body.
 - Initial `URGENT - Urgent Test A — Anya Sokolov` email at
   `austin@getbookerai.com` within seconds.
-- Austin's cell rings within ~10s (Twilio dial time).
+- Austin's cell rings within ~10s (Twilio dial time). Scenario A
+  resolves on this first call.
 - **Pick up. Press any digit.** Twilio plays "Thank you,
   confirmation received." then hangs up.
 - `Urgent Confirmed - Urgent Test A — Anya Sokolov` email lands.
 - Supabase: `urgent_call_attempts` row for this `attempt_id` shows
   `status='confirmed'`, `digits_pressed='<the digit you pressed>'`,
   `confirmed_at` filled in. `attempt_num` is 1.
+- Scenario wall-clock: ~90 seconds (the orchestration sleeps the
+  full 90s grace window before checking status, even though you
+  confirmed early; the race-grace poll exits as soon as it sees
+  `status='confirmed'`).
 
 ### Scenario B — Confirm on attempt 3
 
@@ -206,15 +212,16 @@ curl -sS -X POST "$BASE/urgent_call" \
 Expect:
 - 200 immediately + initial email.
 - Cell rings (~10s) — **decline or ignore call 1**.
-- After ~13s (10s attempt timeout + 3s between attempts), cell
-  rings again — **decline or ignore call 2**.
-- After another ~13s, cell rings for the third time — **pick up,
-  press a digit**.
+- After ~2 minutes (90s attempt timeout + 30s between attempts),
+  cell rings again — **decline or ignore call 2**.
+- After another ~2 minutes, cell rings for the third time —
+  **pick up, press a digit**.
 - `Urgent Confirmed` email lands.
 - Supabase row: `status='confirmed'`, `attempt_num=3`. The
   `call_attempts` JSONB array has 3 `placed` entries (one per
   Twilio dial) plus a `confirmed` entry, plus lifecycle entries
   from `/urgent_call_status`.
+- Scenario wall-clock: ~3 minutes total.
 
 ### Scenario C — Never confirm
 
@@ -231,11 +238,15 @@ curl -sS -X POST "$BASE/urgent_call" \
 
 Expect:
 - 200 immediately + initial email.
-- 3 calls to Austin's cell across ~30s — **ignore all three**.
-- After ~30s total (attempt 1 + between + attempt 2 + between +
-  attempt 3 + race-grace polls), `URGENT - All Phone Attempts
-  Failed - Urgent Test C — Cyryl Wisniewski` email lands.
+- 3 calls to Austin's cell across ~5 minutes — **ignore all three**.
+- After ~5.5 minutes total (3 × 90s attempt timeout + 2 × 30s
+  between attempts + race-grace polls), `URGENT - All Phone
+  Attempts Failed - Urgent Test C — Cyryl Wisniewski` email
+  lands.
 - Supabase row: `status='never_confirmed'`, `attempt_num=3`.
+- Scenario wall-clock: ~5.5 minutes total. This is the production
+  worst-case flow and the real test of "did the recipient
+  experience match what we promised the client."
 
 ### Cleanup tips
 
@@ -273,6 +284,5 @@ in this session as part of `feature/urgent-call`.
 | `SUPABASE_URL` | `https://snmzbjmddgukamuknbxr.supabase.co` | same | **new** |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role secret | same | **new** |
 | `URGENT_CALL_RECIPIENT_PHONE` | `+15087699785` (Manny) | `+12065364398` (Austin) | **new** |
-| `URGENT_CALL_FAST_MODE` | (unset) | `true` | **new** (TEST only) |
 | `PUBLIC_BASE_URL` | `https://allpoints-api.getbookerai.com` | `https://allpoints-api-test.getbookerai.com` | **new** |
 | `USE_STUB_VENDOR_MESSAGE` | (unset) | (unset) | intentionally unset |
