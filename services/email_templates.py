@@ -16,7 +16,36 @@ callers pass `None` to omit them.
 """
 
 import html
+from datetime import datetime
 from typing import Iterable, Optional
+from zoneinfo import ZoneInfo
+
+# TODO: All current clients (AllPoints HVAC, T&T HVAC, Branded
+# Barber) operate in Eastern time. When the first non-Eastern
+# client onboards, move this to a per-client config var
+# (CLIENT_DISPLAY_TZ or similar) and thread it through the
+# template builders.
+_DISPLAY_TZ = ZoneInfo("America/New_York")
+
+
+def _format_confirmed_at(iso_string: str) -> str:
+    """Render a UTC ISO 8601 timestamp as Eastern Time.
+
+    Example: '2026-05-27T21:16:00+00:00' -> 'May 27, 2026 at 5:16 PM ET'
+
+    Returns the input unchanged on parse failure — better to show
+    the raw value than to ship an email with a blank Confirmed At.
+    The %-d / %-I formatters are POSIX strftime extensions
+    (macOS + Linux); Railway runs Linux so this is safe.
+    """
+    if not iso_string:
+        return iso_string
+    try:
+        dt = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+        local = dt.astimezone(_DISPLAY_TZ)
+        return local.strftime("%B %-d, %Y at %-I:%M %p ET")
+    except (ValueError, TypeError):
+        return iso_string
 
 _FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 
@@ -803,7 +832,7 @@ def urgent_confirmation_email_html(
             address,
             service_issue,
             email=email,
-            extra_highlight=("Confirmed At", confirmed_at),
+            extra_highlight=("Confirmed At", _format_confirmed_at(confirmed_at)),
         ),
         client_business_name=client_business_name,
         call_timestamp=call_timestamp,
@@ -829,7 +858,7 @@ def urgent_confirmation_email_text(
             address,
             service_issue,
             email=email,
-            extra_highlight=("Confirmed At", confirmed_at),
+            extra_highlight=("Confirmed At", _format_confirmed_at(confirmed_at)),
         ),
         client_business_name=client_business_name,
         call_timestamp=call_timestamp,

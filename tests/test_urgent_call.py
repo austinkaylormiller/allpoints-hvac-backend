@@ -24,6 +24,23 @@ import config
 from api.main import app
 
 
+def test_format_confirmed_at_renders_eastern_time():
+    from services.email_templates import _format_confirmed_at
+
+    # 21:16 UTC in May = 17:16 EDT (DST in effect) = 5:16 PM ET.
+    assert (
+        _format_confirmed_at("2026-05-27T21:16:00+00:00")
+        == "May 27, 2026 at 5:16 PM ET"
+    )
+
+    # Empty string passes through unchanged.
+    assert _format_confirmed_at("") == ""
+
+    # Malformed input is returned as-is rather than blowing up the
+    # email — better to show the raw value than a blank field.
+    assert _format_confirmed_at("not-a-timestamp") == "not-a-timestamp"
+
+
 @pytest.fixture
 def store():
     """In-memory stand-in for the urgent_call_attempts table.
@@ -163,7 +180,7 @@ def test_urgent_call_happy_path_creates_row_and_spawns_task(
     # Initial urgent email was attempted (subject starts with URGENT)
     initial_call = mock_send.call_args_list[0]
     sent = initial_call.args[0]
-    assert sent["subject"] == "URGENT - Jane Doe"
+    assert sent["subject"] == "URGENT SERVICE REQUEST - Jane Doe"
     assert "Jane Doe" in sent["html"]
     assert "12 Maple St, Worcester, MA" in sent["html"]
     assert "No heat, furnace not igniting" in sent["html"]
@@ -248,9 +265,12 @@ def test_urgent_call_pressed_with_digit_confirms_and_emails(
     assert "confirmed" in log_outcomes
 
     sent = mock_send.call_args.args[0]
-    assert sent["subject"] == "Urgent Confirmed - Jane Doe"
+    assert sent["subject"] == "Urgent Call Confirmed - Jane Doe"
     assert "Jane Doe" in sent["html"]
     assert "Confirmed At" in sent["html"]
+    # Confirmed At renders as Eastern time, e.g. "May 27, 2026 at 5:16 PM ET".
+    assert " at " in sent["html"]
+    assert " ET" in sent["html"]
 
 
 def test_urgent_call_pressed_with_empty_digits_no_confirm(

@@ -297,7 +297,7 @@ def handle_manny_oil_general_inquiries(request: MannyOilGeneralInquiriesRequest)
 
 def handle_urgent_initial_email(request: UrgentCallRequest) -> None:
     """Fires from /urgent_call entry before the Twilio retry loop starts."""
-    subject = f"URGENT - {request.customerName}"
+    subject = f"URGENT SERVICE REQUEST - {request.customerName}"
     html_body = email_templates.urgent_initial_email_html(
         customer_name=request.customerName,
         phone=request.phone,
@@ -331,7 +331,7 @@ def handle_urgent_confirmation_email(row: dict, confirmed_at: str) -> None:
     column names).
     """
     customer_name = row["customer_name"]
-    subject = f"Urgent Confirmed - {customer_name}"
+    subject = f"Urgent Call Confirmed - {customer_name}"
     html_body = email_templates.urgent_confirmation_email_html(
         customer_name=customer_name,
         phone=row["customer_phone"],
