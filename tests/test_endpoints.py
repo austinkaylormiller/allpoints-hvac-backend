@@ -419,27 +419,53 @@ def test_branded_email_does_not_render_call_timestamp(real_client, case):
     assert "Call received:" not in sent["text"]
 
 
-def test_general_inquiries_email_requires_lowercase_inquiry(real_client):
-    """Capital `Inquiry` (the Make.com field name) must fail Pydantic validation."""
+def test_general_inquiries_email_accepts_capital_inquiry(real_client):
+    """Capital `Inquiry` (the agent's actual field casing) must parse and render."""
     payload = {
         "customerName": "Sam Rivera",
         "phone": "(555) 666-7777",
         "Inquiry": "Wants to ask about service area coverage",
         "preferredTimes": "Anytime after 3pm",
     }
-    resp = real_client.post("/general_inquiries_email", json=payload)
-    assert resp.status_code == 422
+    with patch("services.email_send.resend.Emails.send") as mock_send:
+        mock_send.return_value = {"id": "test_message_id"}
+        resp = real_client.post("/general_inquiries_email", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    sent = mock_send.call_args.args[0]
+    assert "Wants to ask about service area coverage" in sent["text"]
 
 
-def test_manny_oil_general_requires_lowercase_inquiry(real_client):
+def test_manny_oil_general_accepts_capital_inquiry(real_client):
     payload = {
         "customerName": "Robert Williams",
         "phone": "(508) 555-0911",
         "Inquiry": "Question about my recent invoice",
         "preferredTimes": "Weekday mornings",
     }
-    resp = real_client.post("/manny_oil_general_inquiries", json=payload)
-    assert resp.status_code == 422
+    with patch("services.email_send.resend.Emails.send") as mock_send:
+        mock_send.return_value = {"id": "test_message_id"}
+        resp = real_client.post("/manny_oil_general_inquiries", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    sent = mock_send.call_args.args[0]
+    assert "Question about my recent invoice" in sent["text"]
+
+
+def test_recent_service_email_accepts_capital_inquiry(real_client):
+    payload = {
+        "customerName": "Linda Park",
+        "phone": "(508) 555-0188",
+        "Inquiry": "Furnace still making the same noise after Monday repair",
+        "preferredTimes": "Tomorrow morning",
+    }
+    with patch("services.email_send.resend.Emails.send") as mock_send:
+        mock_send.return_value = {"id": "test_message_id"}
+        resp = real_client.post("/recent_service_email", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    sent = mock_send.call_args.args[0]
+    assert "Furnace still making the same noise after Monday repair" in sent["text"]
 
 
 # --- normalize_phone defensive paths ---

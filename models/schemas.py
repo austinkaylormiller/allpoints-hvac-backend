@@ -18,7 +18,7 @@ Two optional fields appear on every email endpoint:
 
 from typing import Annotated, Literal, Optional
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field
 
 from services.utils import normalize_phone
 
@@ -73,18 +73,28 @@ class CancelEmailRequest(_OptionalEmailMixin):
 class GeneralInquiriesEmailRequest(_OptionalEmailMixin):
     """Request body for POST /general_inquiries_email."""
 
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     customerName: str = Field(min_length=1)
     phone: PhoneField
-    inquiry: str = Field(min_length=1)
+    inquiry: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("inquiry", "Inquiry"),
+    )
     preferredTimes: str = Field(min_length=1)
 
 
 class RecentServiceEmailRequest(_OptionalEmailMixin):
     """Request body for POST /recent_service_email."""
 
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     customerName: str = Field(min_length=1)
     phone: PhoneField
-    inquiry: str = Field(min_length=1)
+    inquiry: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("inquiry", "Inquiry"),
+    )
     preferredTimes: str = Field(min_length=1)
 
 
@@ -103,9 +113,14 @@ class MannyOilDeliveryRequestRequest(_OptionalEmailMixin):
 class MannyOilGeneralInquiriesRequest(_OptionalEmailMixin):
     """Request body for POST /manny_oil_general_inquiries."""
 
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     customerName: str = Field(min_length=1)
     phone: PhoneField
-    inquiry: str = Field(min_length=1)
+    inquiry: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("inquiry", "Inquiry"),
+    )
     preferredTimes: str = Field(min_length=1)
 
 
